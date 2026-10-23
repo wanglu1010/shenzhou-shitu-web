@@ -988,6 +988,10 @@ return maplibregl$1;
 
 </script>
 <script>
+// v12.87 TDZ 修复：map 初始化（2928 行附近）同步调用 updateMapColors() 引用下方 let 状态，
+// 相关状态必须先于该调用初始化，否则首次着色/图例联动中断（原定义在 4525/7161/7180 行）
+let aqiOn = false;
+let mapMetric = 'temperature_2m';
 // ===== 城市数据 =====
 const CITIES = [
   {n:"北京",p:"北京",lon:116.40,lat:39.90,e:44,c:"温带季风气候",g:"华北平原西北缘，西、北为太行山与燕山山地，东南为平原；暖温带半湿润，四季分明，夏季高温多雨、冬季寒冷干燥。",h:"中国首都，元明清三代都城，拥有长城、故宫、颐和园、天坛、十三陵、大运河、北京人遗址等7处世界遗产。",f:"方言为北京话（普通话基础）；饮食以京菜为主，烤鸭、涮羊肉、炸酱面为代表；节庆有春节庙会、地坛庙会、厂甸庙会；曲艺为京剧发源地，相声、大鼓享誉全国。",tier:"cap",lv:1},
@@ -1814,6 +1818,9 @@ const CITIES = [
   {n:"新星市",p:"新疆",lon:93.74085,lat:42.79606,e:819,c:"中温带干旱气候",g:"地处新疆东部，位于哈密山南垦区，中心位置约在东经93°45′18″，北纬42°48′11″",h:"源于中国工农红军，其诞生可上 溯到 1927 年的八一南昌起义",f:"瓜果之乡，东天山蕴藏丰富的自然资源，中国“疆煤东运”“疆电东送”战略的重要基地和枢纽。光热资源丰",tier:"c2",lv:2},
   {n:"白杨市",p:"新疆",lon:82.89468,lat:46.72658,e:529,c:"中温带湿润气候",g:"地处中国第九个重点开发开放试验区的核心区，拥有国家一类口岸，各类资源丰富",h:"因歌曲《小白杨》而享誉全国的小白杨哨所坐落境内，哨所原名塔斯提（哈萨克语意为“石头堆”），建于1962年；2023年1月白杨市挂牌成立，是中国最年轻的城市之一，兵团第九师边境口岸城市。",f:"口岸城市、兵团第九师驻地；哈萨克族等少数民族聚居，草原牧区文化，小白杨哨所戍边传统。",tier:"c2",lv:2}
 ];;
+
+// v12.87 TDZ 修复：weatherData 依赖 CITIES.length，必须紧随 CITIES 定义（原 4525 行，晚于 map 初始化调用）
+let weatherData = new Array(CITIES.length).fill(null);
 
 const WMO_DESC = {0:"晴",1:"大部晴朗",2:"局部多云",3:"阴",45:"雾",48:"雾凇",51:"轻毛毛雨",53:"毛毛雨",55:"浓毛毛雨",56:"冻毛毛雨",57:"强冻毛毛雨",61:"小雨",63:"中雨",65:"大雨",66:"冻雨",67:"强冻雨",71:"小雪",73:"中雪",75:"大雪",77:"雪粒",80:"小阵雨",81:"阵雨",82:"强阵雨",85:"小阵雪",86:"强阵雪",95:"雷暴",96:"雷暴伴小冰雹",99:"雷暴伴大冰雹"};
 
@@ -4522,7 +4529,6 @@ function initDistSelect(){
   sA.value=0; sB.value=mid;
 }
 
-let weatherData = new Array(CITIES.length).fill(null);
 let weatherSource = 'loading';
 let weatherError = '';
 const BATCH = 40;
@@ -7158,7 +7164,6 @@ document.getElementById('closeOverview').addEventListener('click',()=>{
 let currentActiveLayer = 'temp';
 let quakesOn = false;
 let typhoonOn = false;
-let aqiOn = false;
 let fcAnimOn = false;
 let fcAnimTimer = null;
 let fcAnimDay = 0;
@@ -7177,7 +7182,6 @@ const METRIC_DEFS=[
   {k:'feels',t:'舒适度',note:'温湿指数THI · 蓝=舒适 黄=较热 红=闷热（纯计算）'},
   {k:'daylength',t:'昼长',note:'今日白昼小时 · 蓝=短昼 黄=中 红=长昼（纯计算）'}
 ];
-let mapMetric = 'temperature_2m';
 function metricColor(v){
   if(v==null) return '#666';
   const m=mapMetric;
