@@ -750,7 +750,7 @@ body.light-map [style*="rgba(255,255,255,0.9)"] { color:rgba(20,30,50,0.92) !imp
   <div class="legend-panel" onclick="toggleLegend()" title="点击折叠/展开色阶">
     <h5><span id="legendTitle">温度色阶</span> <button id="legendModeBtn" title="切换相对/绝对色阶" onclick="event.stopPropagation();toggleColorMode()">相对</button><span class="legend-fold">▾</span></h5>
     <div class="legend-gradient"></div>
-    <div class="legend-scale" id="legendScale"><span>-20°</span><span>0°</span><span>20°</span><span>40°</span></div>
+    <div class="legend-scale" id="legendScale"><span>低</span><span>中</span><span>高</span></div>
     <div class="legend-note" id="legendNote">蓝=低 黄=中 红=高（按全国实时温差，3档离散）</div>
   </div>
 
@@ -7397,14 +7397,20 @@ function showExtremeDetail(i){
 // ===== 7天预报地图动画（基于已加载daily数据，逐日播放温度/降水色斑）=====
 window.paintFcDay = function(day){
   const isRain = fcAnimMetric==='precipitation_sum';
+  // v12.87 动画着色/图例口径统一：按动画自身指标分档（温度 3 档离散、降水 4 档含灰），不再误用当前 mapMetric
   const vals = CITIES.map((c,i)=>{
     const d = weatherData[i];
     if(!d||!d.daily) return null;
     return isRain ? (d.daily.precipitation_sum?d.daily.precipitation_sum[day]:null)
                   : (d.daily.temperature_2m_max?d.daily.temperature_2m_max[day]:null);
   });
+  function animCol(v){
+    if(v==null) return '#666';
+    if(isRain){ if(v<=0) return '#546e7a'; if(v<2) return C_LOW; if(v<10) return C_MID; return C_HIGH; }
+    return colorMode==='abs' ? tempColor(v) : tempColorRel(v);
+  }
   document.querySelectorAll('.city-marker').forEach((el,i)=>{
-    const col = metricColor(vals[i]);
+    const col = animCol(vals[i]);
     const dot = el.querySelector('.dot');
     if(!dot) return;
     dot.style.background = col;
@@ -7413,7 +7419,10 @@ window.paintFcDay = function(day){
   const chips=document.querySelectorAll('#fcDayBar .fc-chip');
   chips.forEach((c,i)=>c.classList.toggle('active',i===day));
   const scaleEl=document.getElementById('legendScale');
-  if(scaleEl) scaleEl.innerHTML= isRain ? '<span>无</span><span>小雨</span><span>中雨</span><span>大雨</span>' : '<span>-20°</span><span>0°</span><span>20°</span><span>40°</span>';
+  if(scaleEl) scaleEl.innerHTML= isRain ? '<span>无</span><span>弱</span><span>中</span><span>强</span>'
+    : (colorMode==='abs' ? '<span>≤0°</span><span>0~20°</span><span>&gt;20°</span>' : '<span>低</span><span>中</span><span>高</span>');
+  const noteEl=document.getElementById('legendNote');
+  if(noteEl) noteEl.textContent = isRain ? '灰=无降水 蓝=弱 黄=中 红=强（3档离散+灰）' : (colorMode==='abs' ? '蓝≤0° 黄0~20° 红>20°（固定标尺，3档离散）' : '蓝=低 黄=中 红=高（按全国实时温差，3档离散）');
   // 顶部状态标注
   const d0=weatherData[0];
   const label=document.getElementById('fcDayLabel');
@@ -7487,6 +7496,8 @@ window.paintDayNight = function(hour){
   if(lb) lb.textContent='昼夜动画 · 北京时 '+String(hour).padStart(2,'0')+':00（白昼=金黄 · 夜晚=深蓝）';
   const scaleEl=document.getElementById('legendScale');
   if(scaleEl) scaleEl.innerHTML='<span>夜晚</span><span>晨昏</span><span>白昼</span>';
+  const noteEl=document.getElementById('legendNote');
+  if(noteEl) noteEl.textContent='昼夜图层 · 白昼=金黄 夜晚=深蓝（按日出日落纯计算）';
 };
 window.toggleDnAnim = function(on){
   const lb=document.getElementById('dnTimeLabel');
