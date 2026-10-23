@@ -2979,6 +2979,8 @@ function setUnits(k,v){
   if(window.renderTable) renderTable();
   if(window.renderWeatherOverview) renderWeatherOverview();
   if(window.renderAggStats) renderAggStats();
+  // v12.87.1 单位切换即时联动抽屉（城市详情温度/体感/曲线/同省城市同步刷新；抽屉关闭时跳过）
+  if(typeof currentDrawerIdx!=='undefined'&&currentDrawerIdx>=0){ const _d=document.getElementById('drawer'); if(_d&&_d.classList.contains('open')) openCityDrawer(currentDrawerIdx); }
 }
 function uT(v){ if(v==null||isNaN(v)) return '—'; return window.__unit.temp==='F'?(Math.round(v*9/5+32)+'°F'):(Math.round(v)+'°'); }
 function uTF(v){ if(v==null||isNaN(v)) return '—'; return window.__unit.temp==='F'?(Math.round(v*9/5+32)+'°F'):(Math.round(v)+'°C'); }
