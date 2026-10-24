@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>神州时图 · 中国实时气象地理图</title>
-<!-- 神州时图 v13.1.1 · build-20261024-fbguard · 反馈中心交互加固 -->
+<!-- 神州时图 v13.1.2 · build-20261024-fix7 · 全量审计修复批(F1-F7) -->
 <script>
 window.__fbReady=false;window.__fbPending=0;
 document.addEventListener('click',function(e){
@@ -4646,7 +4646,8 @@ async function fetchMetNoCity(c){
   try{
     const ctrl=new AbortController(); const timer=setTimeout(()=>ctrl.abort(),8000);
     const res=await fetch(`https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${c.lat.toFixed(3)}&lon=${c.lon.toFixed(3)}`,{
-      signal:ctrl.signal
+      signal:ctrl.signal,
+      headers:{'User-Agent':'shenzhou-shitu/1.0 (+https://wanglu1010.github.io/shenzhou-shitu-web)'}
     });
     clearTimeout(timer);
     if(!res.ok) return null;
