@@ -630,7 +630,7 @@ body.light-map [style*="rgba(255,255,255,0.9)"] { color:rgba(20,30,50,0.92) !imp
 <div id="offlineBar" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:#e53935;color:#fff;text-align:center;font-size:12px;padding:5px 10px;font-weight:600">⚠ 网络异常 · 数据源不可达，当前展示缓存数据（可能过期）</div>
 
 <div class="topbar">
-  <div class="logo"><span class="dot"></span>神州时图<small id="verSmall">中国实时气象地理图 · v12.87</small></div>
+  <div class="logo"><span class="dot"></span>神州时图<small id="verSmall">中国实时气象地理图 · v12.87</small><span id="topStatus" style="margin-left:14px;font-size:11px;padding:3px 10px;border-radius:20px;background:rgba(76,175,80,0.12);color:#4caf50;border:1px solid rgba(76,175,80,0.35);white-space:nowrap">状态检测中…</span></div>
   <div class="search-box">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
     <input type="text" id="searchInput" placeholder="搜索城市或地理要素..." autocomplete="off">
@@ -777,7 +777,18 @@ body.light-map [style*="rgba(255,255,255,0.9)"] { color:rgba(20,30,50,0.92) !imp
           <span id="srcBoardToggle" style="font-size:12px;color:var(--dim)">▾ 收起</span>
         </span>
       </div>
-      <div id="srcBoard" style="margin-top:8px;font-size:10.5px;line-height:1.6"></div>
+      <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+      <button onclick="runSelfCheck()" title="一键生成全维度数据状态的人话报告，可一键复制" style="padding:3px 10px;font-size:11px;border-color:rgba(38,198,218,0.5);color:#26c6da;background:rgba(38,198,218,0.12);cursor:pointer;border-radius:6px">一键自检（人话报告）</button>
+      <button onclick="toggleFbPanel()" title="查看我的反馈与处理状态" style="padding:3px 10px;font-size:11px;border-color:rgba(255,167,38,0.5);color:#ffa726;background:rgba(255,167,38,0.12);cursor:pointer;border-radius:6px">反馈中心</button>
+      <span style="font-size:10px;color:var(--dim);line-height:2">每个维度独立标注：●实时 ●备用源 ●缓存 ●历史快照 · 点行内按钮可刷新/换源/反馈</span>
+    </div>
+    <div id="healthBoard" style="margin-top:8px;font-size:10.5px;line-height:1.6"></div>
+    <div id="fbPanel" style="display:none;margin-top:8px;padding:8px 10px;border:1px solid rgba(255,167,38,0.25);border-radius:8px;background:rgba(255,167,38,0.05)"></div>
+    <div id="diagPanel" style="display:none;margin-top:8px;padding:8px 10px;border:1px solid rgba(38,198,218,0.3);border-radius:8px;background:rgba(38,198,218,0.06)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b style="color:#26c6da;font-size:12px">自检报告</b><button onclick="copyDiagReport()" style="padding:2px 8px;font-size:10.5px;cursor:pointer;border-radius:5px">复制报告</button></div>
+      <div id="diagReport" style="white-space:pre-wrap;font-size:11px;color:var(--dim);line-height:1.7"></div>
+    </div>
+    <div id="srcBoard" style="margin-top:8px;font-size:10.5px;line-height:1.6"></div>
     </div>
     <!-- ② 运营状态（最上，实时状态优先） -->
     <div class="stat-group" style="border:1px solid rgba(100,181,246,0.25);background:rgba(100,181,246,0.05);border-radius:12px;padding:10px 12px;margin-bottom:14px">
@@ -4341,10 +4352,12 @@ function parseTaAir(j){
 }
 // AQI 总入口：腾讯主源 → 和风备源（OM 兜底保留原有独立逻辑）
 async function aqiFor(idx){
-  const d=await taqiFor(idx);
-  if(d&&d.aqi!=null){ window.__aqiSrc='ta'; d.src='ta'; return d; }
-  const q=await qwAqiFor(idx);
-  if(q){ window.__aqiSrc='qw'; q.src='qw'; return q; }
+  // v13.0 手动源偏好：localStorage shenzhou_aqi_pref ∈ {ta,qw}（换源按钮写入；无偏好走自动降级链）
+  let _pref=''; try{ _pref=localStorage.getItem('shenzhou_aqi_pref')||''; }catch(e){ _pref=''; }
+  if(_pref==='ta'){ const d=await taqiFor(idx); if(d&&d.aqi!=null){ window.__aqiSrc='ta'; d.src='ta'; return d; } const q=await qwAqiFor(idx); if(q){ window.__aqiSrc='qw'; q.src='qw'; return q; } return null; }
+  if(_pref==='qw'){ const q=await qwAqiFor(idx); if(q){ window.__aqiSrc='qw'; q.src='qw'; return q; } const d=await taqiFor(idx); if(d&&d.aqi!=null){ window.__aqiSrc='ta'; d.src='ta'; return d; } return null; }
+  const d=await taqiFor(idx); if(d&&d.aqi!=null){ window.__aqiSrc='ta'; d.src='ta'; return d; }
+  const q=await qwAqiFor(idx); if(q){ window.__aqiSrc='qw'; q.src='qw'; return q; }
   return null;
 }
 // 和风单城实时AQI（备源）
@@ -8251,5 +8264,241 @@ document.addEventListener('DOMContentLoaded',()=>{
 });
 </script>
 <div id="geoEvents"></div>
+
+<script>
+/* ===== v13.0 自运营体系：数据溯源徽章 / 健康面板 / 一键自检 / 顶栏状态 / 操作日志 / 反馈自循环 ===== */
+(function(){
+  try{
+    var v13El=document.getElementById('verSmall'); if(v13El) v13El.innerHTML='中国实时气象地理图 · v13.0';
+  }catch(e){}
+  var DS=[
+    {k:'weather', label:'当前天气/7天', src:'Open-Meteo(经代理)', bak:'MET Norway', thrMin:4, probeKeys:['天气主源(经代理)'], refresh:function(){ return window.fetchWeather?window.fetchWeather(true):null; }, tip:'全部城市重拉' },
+    {k:'aqi', label:'空气质量 AQI', src:'腾讯位置服务', bak:'和风', thrMin:10, probeKeys:['AQI透传(腾讯)'], refresh:function(){ return window.loadAirQualityAll?window.loadAirQualityAll(true):null; }, tip:'重拉全部城市 AQI（和风为付费配额源）' },
+    {k:'alerts', label:'气象预警', src:'中央气象台', bak:'和风预警', thrMin:10, probeKeys:['预警'], refresh:function(){ return window.fetchWeatherAlerts?window.fetchWeatherAlerts(true):null; }, tip:'重拉全国预警' },
+    {k:'quakes', label:'地震', src:'USGS', thrMin:60, probeKeys:['地震'], refresh:function(){ window.quakesLoaded=false; if(window.loadEarthquakes) return window.loadEarthquakes(); }, tip:'重拉 7 天内地震（开启图层后 10 分钟自动更新）' },
+    {k:'typhoon', label:'台风', src:'台风说', thrMin:30, probeKeys:['台风'], refresh:function(){ return window.loadTyphoons?window.loadTyphoons():null; }, tip:'重拉当前台风路径（开启图层后 30 分钟自动更新）' },
+    {k:'marine', label:'海洋潮汐', src:'Open-Meteo Marine', thrMin:240, probeKeys:['潮汐透传'], refresh:null, onDemand:true, tip:'按需维度：打开城市抽屉自动加载（24h 缓存）' },
+    {k:'history', label:'历史实况近7天', src:'Open-Meteo Archive', thrMin:1440, probeKeys:['历史透传'], refresh:null, onDemand:true, tip:'按需维度：抽屉内点「查询」强制刷新（24h 缓存）' },
+    {k:'anomalies', label:'去年今日', src:'Open-Meteo Archive', thrMin:1440, probeKeys:['历史'], refresh:null, onDemand:true, tip:'按需维度：抽屉内自动加载（24h 缓存）' },
+    {k:'climate', label:'气候资料30年', src:'Open-Meteo Climate', static:true, note:'近30年均值档案', refresh:null, onDemand:true, tip:'静态档案：非实时数据' },
+    {k:'sun', label:'日出日落', src:'本地计算(无数据源)', pure:true, refresh:null, tip:'纯几何计算，不请求数据源' },
+    {k:'moon', label:'月相', src:'本地计算(无数据源)', pure:true, refresh:null, tip:'纯计算，不请求数据源' }
+  ];
+  window.DS_REG=DS;
+  window.__v13Ready=true;
+
+  window.opLog=function(dim,op,extra){
+    try{
+      var arr=[]; try{ arr=JSON.parse(localStorage.getItem('shenzhou_oplog')||'[]'); }catch(e){ arr=[]; }
+      arr.push({t:Date.now(), dim:dim, op:op, extra:extra||'', ver:'v13.0'});
+      if(arr.length>100) arr=arr.slice(arr.length-100);
+      try{ localStorage.setItem('shenzhou_oplog', JSON.stringify(arr)); }catch(e){}
+    }catch(e){}
+  };
+
+  window.dimState=function(k){
+    var d=null; for(var i=0;i<DS.length;i++){ if(DS[i].k===k){ d=DS[i]; break; } }
+    if(!d) return null;
+    var now=Date.now(), probe=null, fail=0, pct=null, ageMin=null, lastOkT=null, level='na', src=d.src, note='';
+    try{
+      if(d.probeKeys&&d.probeKeys.length){
+        var ps=window.__sbRes||[];
+        for(var j=0;j<ps.length;j++){ if(ps[j].k.indexOf(d.probeKeys[0])>=0){ probe=ps[j]; break; } }
+        if(probe){ fail=(window.__sbFailStreak||{})[probe.k]||0;
+          var h=(window.__sbHist||{})[probe.k]||[], day=24*3600*1000, last=[];
+          for(var q=0;q<h.length;q++){ if(now-h[q].t<day) last.push(h[q]); }
+          pct=last.length?Math.round(last.filter(function(x){return x.ok;}).length/last.length*100):null;
+        }
+      }
+      if(d.pure){ level='pure'; }
+      else if(d.static){ level='snapshot'; }
+      else if(k==='quakes'||k==='typhoon'){
+        var t=k==='quakes'?window.__quakeT:window.__typhoonT;
+        if(!t){ level='na'; }
+        else{ ageMin=(now-t)/60000; lastOkT=t; level=ageMin<=d.thrMin?'live':(ageMin<=1440?'cache':'snapshot'); }
+      }
+      else if(k==='aqi'){
+        var cache={}; try{ cache=JSON.parse(localStorage.getItem('shenzhou_aqi_all')||'{}'); }catch(e){}
+        var t=window.__aqiLastT||cache.t||0, isQw=window.__aqiSrc==='qw';
+        if(t){ ageMin=(now-t)/60000; lastOkT=t; src=isQw?'和风(备源)':d.src;
+          if(window.aqiAllFailed) level='down';
+          else if(ageMin<=d.thrMin) level=isQw?'backup':'live';
+          else if(ageMin<=30) level='cache';
+          else level='snapshot';
+        } else level=window.aqiAllFailed?'down':'na';
+      }
+      else if(k==='weather'){
+        if(probe){ level=probe.ok?'live':'cache'; if(!probe.ok&&fail>=2){ level='cache'; note='主源连续失败'+fail+'次，可能已切 MET Norway 备源'; } }
+        else level='na';
+      }
+      else{
+        if(probe){ level=probe.ok?'live':'cache'; if(!probe.ok&&fail>=2) note='连续失败'+fail+'次'; }
+        else level='na';
+      }
+    }catch(e){ level='na'; }
+    return {k:k,d:d,level:level,src:src,ageMin:ageMin,lastOkT:lastOkT,pct:pct,note:note};
+  };
+
+  window.termOf=function(st){
+    if(!st) return {dot:'#546e7a', txt:'未知状态'};
+    var d=st.d, age=st.ageMin, ago='';
+    if(age!=null){ ago=age<1?'<1 分钟前':(age<60?Math.round(age)+' 分钟前':(age<1440?Math.round(age/60)+' 小时前':Math.round(age/1440)+' 天前')); }
+    switch(st.level){
+      case 'live':   return {dot:'#4caf50', txt:'实时 · '+d.src+(ago?' · '+ago:'')};
+      case 'backup': return {dot:'#fb8c00', txt:'备用源 · '+st.src+(ago?' · '+ago:'')};
+      case 'cache':  return {dot:'#42a5f5', txt:'缓存 · '+(ago||'稍旧')+(st.note?' · '+st.note:'')};
+      case 'snapshot':return {dot:'#90a4ae', txt:'历史快照 · '+(st.lastOkT?('截至 '+new Date(st.lastOkT).toTimeString().slice(0,5)):'档案')};
+      case 'down':   return {dot:'#ef5350', txt:'暂时取不到，正在自动重试'};
+      case 'pure':   return {dot:'#4caf50', txt:'实时 · 本地计算（无数据源）'};
+      default:       return {dot:'#546e7a', txt:'未拉取 · 点刷新'};
+    }
+  };
+
+  window.refreshDim=function(k){
+    var d=null; for(var i=0;i<DS.length;i++){ if(DS[i].k===k) d=DS[i]; }
+    if(!d) return;
+    window.opLog(k,'refresh');
+    if(d.pure){ showToast('「'+d.label+'」为本地计算，无需刷新'); return; }
+    if(d.static){ showToast('「'+d.label+'」为静态档案，无实时刷新'); return; }
+    if(!d.refresh){ showToast('「'+d.label+'」为按需维度：打开城市抽屉自动加载', 2600); return; }
+    showToast('正在刷新「'+d.label+'」…');
+    try{
+      var r=d.refresh();
+      if(r&&r.then) r.then(function(){ setTimeout(renderHealthBoard, 1500); }).catch(function(){ setTimeout(renderHealthBoard, 1500); });
+      else setTimeout(renderHealthBoard, 1500);
+    }catch(e){ setTimeout(renderHealthBoard, 1500); }
+  };
+
+  window.switchSrc=function(k){
+    var d=null; for(var i=0;i<DS.length;i++){ if(DS[i].k===k) d=DS[i]; }
+    if(!d) return;
+    window.opLog(k,'switchSrc');
+    if(k==='aqi'){
+      var pref=''; try{ pref=localStorage.getItem('shenzhou_aqi_pref')||''; }catch(e){}
+      var target=pref==='qw'?'腾讯(主源,免费)':'和风(备源,付费配额)';
+      var ok=confirm('将强制切换 AQI 数据源为「'+target+'」并重新拉取。\n继续？');
+      if(!ok) return;
+      try{ localStorage.setItem('shenzhou_aqi_pref', pref==='qw'?'ta':'qw'); }catch(e){}
+      showToast('已切换 AQI 源偏好：'+target+'，正在重拉…');
+      if(window.loadAirQualityAll) window.loadAirQualityAll(true).then(function(){ setTimeout(renderHealthBoard,1500); }).catch(function(){ setTimeout(renderHealthBoard,1500); });
+      setTimeout(renderHealthBoard,2000);
+      return;
+    }
+    if(d.onDemand){ showToast('「'+d.label+'」为主备自动接管维度，打开城市抽屉按需加载', 2800); return; }
+    showToast('「'+d.label+'」主备源由系统自动接管（连续失败自动切换），可点「刷新」重试', 3000);
+  };
+
+  window.fbSubmit=function(k){
+    var d=null; for(var i=0;i<DS.length;i++){ if(DS[i].k===k) d=DS[i]; }
+    if(!d) return;
+    var st=window.dimState(k), term=window.termOf(st);
+    var desc=prompt('反馈「'+d.label+'」：当前为「'+term.txt+'」。\n请一句话描述问题（选填，可留空）：','');
+    if(desc===null) return;
+    window.opLog(k,'feedback',desc);
+    var arr=[]; try{ arr=JSON.parse(localStorage.getItem('shenzhou_fb')||'[]'); }catch(e){ arr=[]; }
+    arr.push({t:Date.now(), dim:k, dimLabel:d.label, state:term.txt, desc:desc, status:'已提交'});
+    if(arr.length>50) arr=arr.slice(arr.length-50);
+    try{ localStorage.setItem('shenzhou_fb', JSON.stringify(arr)); }catch(e){}
+    showToast('反馈已记录（设备本地），次日 07:30 统一处理', 3000);
+    renderFbPanel();
+  };
+
+  window.renderFbPanel=function(){
+    var box=document.getElementById('fbPanel'); if(!box) return;
+    var arr=[]; try{ arr=JSON.parse(localStorage.getItem('shenzhou_fb')||'[]'); }catch(e){ arr=[]; }
+    var logs=[]; try{ logs=JSON.parse(localStorage.getItem('shenzhou_oplog')||'[]'); }catch(e){ logs=[]; }
+    var h='<b style="color:#ffa726;font-size:12px">反馈中心（本机记录）</b><div style="font-size:10.5px;color:var(--dim);line-height:1.6">反馈随次日 07:30 定时任务统一处理并回执；已修复项会标注版本号。</div>';
+    if(!arr.length) h+='<div style="margin-top:6px;font-size:11px;color:var(--dim)">暂无反馈记录。对某个维度不满意时，点该行「不满意?」提交。</div>';
+    else{
+      h+='<table style="width:100%;margin-top:6px;border-collapse:collapse;font-size:10.5px"><tr style="color:var(--dim)"><th style="text-align:left;padding:2px 4px;border-bottom:1px solid rgba(255,255,255,0.1)">时间</th><th style="text-align:left;padding:2px 4px;border-bottom:1px solid rgba(255,255,255,0.1)">维度</th><th style="text-align:left;padding:2px 4px;border-bottom:1px solid rgba(255,255,255,0.1)">状态</th><th style="text-align:left;padding:2px 4px;border-bottom:1px solid rgba(255,255,255,0.1)">描述</th></tr>';
+      for(var i=arr.length-1;i>=0;i--){ var x=arr[i]; h+='<tr><td style="padding:2px 4px">'+new Date(x.t).toTimeString().slice(0,5)+'</td><td style="padding:2px 4px">'+x.dimLabel+'</td><td style="padding:2px 4px;color:#ffa726">'+x.status+'</td><td style="padding:2px 4px;color:var(--dim);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+((x.desc||'').slice(0,20)||'—')+'</td></tr>'; }
+      h+='</table>';
+    }
+    if(logs.length){
+      var op=''; var last=logs.slice(-4).reverse();
+      for(var j=0;j<last.length;j++){ var y=last[j]; op+=('['+new Date(y.t).toTimeString().slice(0,5)+'] '+y.dim+' '+y.op+(y.extra?'('+String(y.extra).slice(0,12)+')':'')+'；'); }
+      h+='<div style="margin-top:6px;font-size:10px;color:var(--dim)">最近操作：'+op+'</div>';
+    }
+    box.innerHTML=h;
+  };
+  window.toggleFbPanel=function(){ var p=document.getElementById('fbPanel'); if(!p) return; p.style.display=(p.style.display==='none')?'block':'none'; if(p.style.display==='block') renderFbPanel(); };
+
+  var dotHtml=function(st){ var t=window.termOf(st); return '<span style="color:'+t.dot+'">●</span> '+t.txt; };
+
+  window.renderHealthBoard=function(){
+    var box=document.getElementById('healthBoard'); if(!box) return;
+    var rows=[];
+    for(var i=0;i<DS.length;i++){
+      var st=window.dimState(DS[i].k); if(!st) continue;
+      var t=window.termOf(st);
+      var pctTxt=st.pct==null?'<span style="color:var(--dim)">—</span>':('<span style="color:'+(st.pct>=95?'#4caf50':(st.pct>=80?'#ffa726':'#ef5350'))+'">'+st.pct+'%</span>');
+      var lastTxt=st.lastOkT?new Date(st.lastOkT).toTimeString().slice(0,5):(st.level==='na'?'未拉取':'—');
+      var btns='<button onclick="window.refreshDim(\''+DS[i].k+'\')" title="'+ (DS[i].tip||'') +'" style="padding:1px 6px;font-size:10px;cursor:pointer;border-radius:5px;color:#26c6da;background:rgba(38,198,218,0.12);border:1px solid rgba(38,198,218,0.4)">刷新</button> '+
+               '<button onclick="window.switchSrc(\''+DS[i].k+'\')" title="强制切换数据源（付费源会弹确认）" style="padding:1px 6px;font-size:10px;cursor:pointer;border-radius:5px;color:#ffa726;background:rgba(255,167,38,0.12);border:1px solid rgba(255,167,38,0.4)">换源</button> '+
+               '<button onclick="window.fbSubmit(\''+DS[i].k+'\')" title="对该维度数据不满意，提交反馈" style="padding:1px 6px;font-size:10px;cursor:pointer;border-radius:5px;color:#ef5350;background:rgba(239,83,80,0.12);border:1px solid rgba(239,83,80,0.4)">不满意?</button>';
+      rows.push('<tr style="border-bottom:1px solid rgba(255,255,255,0.06)"><td style="padding:3px 5px;color:#e2e8f0;white-space:nowrap">'+DS[i].label+'</td><td style="padding:3px 5px;color:var(--dim);white-space:nowrap">'+st.src+'</td><td style="padding:3px 5px;white-space:nowrap">'+dotHtml(st)+'</td><td style="padding:3px 5px">'+pctTxt+'</td><td style="padding:3px 5px;color:var(--dim)">'+lastTxt+'</td><td style="padding:3px 5px;white-space:nowrap">'+btns+'</td></tr>');
+    }
+    box.innerHTML='<div style="font-size:11px;color:#e2e8f0;margin-bottom:4px"><b>维度健康面板（11 维度 · 24h 成功率）</b><span style="color:var(--dim);font-size:10px;margin-left:6px">●绿实时 ●橙备用 ●蓝缓存 ●灰历史快照 ●红失败</span></div>'+
+      '<table style="width:100%;border-collapse:collapse;font-size:10.5px"><tr style="color:var(--dim)"><th style="text-align:left;padding:3px 5px;border-bottom:1px solid rgba(255,255,255,0.15)">维度</th><th style="text-align:left;padding:3px 5px;border-bottom:1px solid rgba(255,255,255,0.15)">数据源</th><th style="text-align:left;padding:3px 5px;border-bottom:1px solid rgba(255,255,255,0.15)">状态</th><th style="text-align:left;padding:3px 5px;border-bottom:1px solid rgba(255,255,255,0.15)">成功率</th><th style="text-align:left;padding:3px 5px;border-bottom:1px solid rgba(255,255,255,0.15)">最后成功</th><th style="text-align:left;padding:3px 5px;border-bottom:1px solid rgba(255,255,255,0.15)">操作</th></tr>'+rows.join('')+'</table>';
+  };
+  window.renderHealthBoard=renderHealthBoard;
+
+  window.renderTopStatus=function(){
+    var el=document.getElementById('topStatus'); if(!el) return;
+    var live=0,backup=0,down=0,na=0;
+    for(var i=0;i<DS.length;i++){ var st=window.dimState(DS[i].k); if(!st) continue; if(st.level==='live'||st.level==='pure') live++; else if(st.level==='backup') backup++; else if(st.level==='down') down++; else if(st.level==='na') na++; }
+    var txt, col, bg;
+    if(down>0){ txt='⚠ '+down+' 个维度取不到 · 点击查看'; col='#ef5350'; bg='rgba(239,83,80,0.12)'; }
+    else if(backup>0){ txt='● '+backup+' 个维度使用备用源'; col='#fb8c00'; bg='rgba(251,140,0,0.12)'; }
+    else if(na>0){ txt='● '+na+' 个维度未拉取 · 点击查看'; col='#ffa726'; bg='rgba(255,167,38,0.12)'; }
+    else { txt='● 全部正常（'+live+' 实时）'; col='#4caf50'; bg='rgba(76,175,80,0.12)'; }
+    el.innerHTML=txt;
+    el.style.color=col; el.style.background=bg; el.style.borderColor=col;
+    el.onclick=function(){ var b=document.getElementById('healthBoard'); if(b){ b.scrollIntoView({behavior:'smooth',block:'center'}); var p=b.closest('.stat-group'); if(p){ var tg=p.querySelector('#srcBoardToggle'); if(tg&&p.style.display==='none'){} } } };
+    var sg=document.getElementById('srcBoardToggle'); /* 展开 srcBoard 卡 */
+    if(window.__srcBoardCollapsed===false||window.__srcBoardCollapsed===undefined){}
+  };
+
+  var lastReport='';
+  window.runSelfCheck=function(){
+    var lines=[], live=0,backup=0,cache=0,snap=0,down=0,na=0;
+    lines.push('【神州时图自检报告 · v13.0 · '+new Date().toLocaleString('zh-CN')+'】');
+    for(var i=0;i<DS.length;i++){
+      var st=window.dimState(DS[i].k); if(!st) continue;
+      var t=window.termOf(st);
+      var mark='✓'; if(st.level==='backup') mark='⚠'; else if(st.level==='down') mark='✗'; else if(st.level==='cache') mark='◐'; else if(st.level==='snapshot') mark='▦'; else if(st.level==='na') mark='·';
+      if(st.level==='live'||st.level==='pure') live++; else if(st.level==='backup') backup++; else if(st.level==='cache') cache++; else if(st.level==='snapshot') snap++; else if(st.level==='down') down++; else na++;
+      var pctTxt=st.pct==null?'':(' 近24h成功率'+st.pct+'%');
+      var sug=st.level==='down'?' → 建议点刷新':(st.level==='cache'?' → 可点刷新':(st.level==='na'?' → 点刷新加载':''));
+      lines.push((i+1)+'. '+DS[i].label+' '+mark+' '+t.txt+pctTxt+sug+(st.note?'（'+st.note+'）':''));
+    }
+    lines.push('汇总：实时 '+live+' / 备用 '+backup+' / 缓存 '+cache+' / 历史快照 '+snap+' / 失败 '+down+' / 未拉取 '+na);
+    lines.push('若数据仍不满意，请复制本报告提交反馈，次日 07:30 统一处理。');
+    lastReport=lines.join('\n');
+    var dp=document.getElementById('diagPanel'), dr=document.getElementById('diagReport');
+    if(dp) dp.style.display='block';
+    if(dr) dr.textContent=lastReport;
+    window.opLog('_all','selfcheck');
+    showToast('自检完成（'+live+' 实时 · '+down+' 失败）', 2500);
+  };
+  window.copyDiagReport=function(){
+    if(!lastReport) lastReport=document.getElementById('diagReport')?document.getElementById('diagReport').textContent:'';
+    if(!lastReport){ showToast('请先生成自检报告', 2000); return; }
+    try{
+      if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(lastReport).then(function(){ showToast('报告已复制，可粘贴到反馈中', 2500); }).catch(function(){ fallbackCopy(); }); }
+      else fallbackCopy();
+    }catch(e){ fallbackCopy(); }
+    function fallbackCopy(){ try{ var ta=document.createElement('textarea'); ta.value=lastReport; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); showToast('报告已复制，可粘贴到反馈中', 2500); }catch(e2){ showToast('复制失败，请手动选择报告文本', 2000); } }
+  };
+
+  var tick=function(){ try{ renderHealthBoard(); renderTopStatus(); }catch(e){} };
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(tick,1200); setInterval(tick,30000); });
+  else { setTimeout(tick,1200); setInterval(tick,30000); }
+  /* 页面加载/手动刷新完成后联动刷新徽章 */
+  try{ var _or=window.renderSourceBoard; }catch(e){}
+  window.addEventListener('load', function(){ setTimeout(tick, 2500); });
+})();
+</script>
+
 </body>
 </html>
