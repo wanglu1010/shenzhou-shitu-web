@@ -8388,6 +8388,31 @@ document.addEventListener('DOMContentLoaded',()=>{
     showToast('「'+d.label+'」主备源由系统自动接管（连续失败自动切换），可点「刷新」重试', 3000);
   };
 
+  /* v13.1：反馈云端化——本地缓冲（shenzhou_fb）+ 云端工单（COS）双轨；离线自动补传 */
+  function saveFb(x){
+    var arr=[]; try{ arr=JSON.parse(localStorage.getItem('shenzhou_fb')||'[]'); }catch(e){ arr=[]; }
+    arr.push(x);
+    if(arr.length>50) arr=arr.slice(arr.length-50);
+    try{ localStorage.setItem('shenzhou_fb', JSON.stringify(arr)); }catch(e){}
+  }
+  function fbPushToCloud(x, cb){
+    var payload={dim:x.dim,msg:(x.desc||'').slice(0,300),src:x.state||'',ver:'v13.1'};
+    try{
+      fetch(PROXY_URL+'?fb=add&data='+encodeURIComponent(JSON.stringify(payload))).then(function(r){return r.json();}).then(function(j){
+        var ok=!!(j&&j.ok);
+        var arr=[]; try{ arr=JSON.parse(localStorage.getItem('shenzhou_fb')||'[]'); }catch(e){ arr=[]; }
+        for(var i=0;i<arr.length;i++){ if(arr[i]._ts===x._ts){ arr[i].cloud=1; arr[i].status=ok?'已提交':'待补传'; if(ok&&j.id) arr[i].id=j.id; } }
+        try{ localStorage.setItem('shenzhou_fb', JSON.stringify(arr)); }catch(e){}
+        if(cb) cb(ok, j&&j.id);
+      }).catch(function(){ if(cb) cb(false,''); });
+    }catch(e){ if(cb) cb(false,''); }
+  }
+  function pushPendingFb(){
+    var arr=[]; try{ arr=JSON.parse(localStorage.getItem('shenzhou_fb')||'[]'); }catch(e){ arr=[]; }
+    for(var i=0;i<arr.length;i++){ var x=arr[i]; if(x.cloud||x._pushing) continue; x._pushing=1; fbPushToCloud(x,function(ok,id){}); }
+  }
+  window.pushPendingFb=pushPendingFb;
+
   window.fbSubmit=function(k){
     var d=null; for(var i=0;i<DS.length;i++){ if(DS[i].k===k) d=DS[i]; }
     if(!d) return;
@@ -8395,24 +8420,37 @@ document.addEventListener('DOMContentLoaded',()=>{
     var desc=prompt('反馈「'+d.label+'」：当前为「'+term.txt+'」。\n请一句话描述问题（选填，可留空）：','');
     if(desc===null) return;
     window.opLog(k,'feedback',desc);
-    var arr=[]; try{ arr=JSON.parse(localStorage.getItem('shenzhou_fb')||'[]'); }catch(e){ arr=[]; }
-    arr.push({t:Date.now(), dim:k, dimLabel:d.label, state:term.txt, desc:desc, status:'已提交'});
-    if(arr.length>50) arr=arr.slice(arr.length-50);
-    try{ localStorage.setItem('shenzhou_fb', JSON.stringify(arr)); }catch(e){}
-    showToast('反馈已记录（设备本地），次日 07:30 统一处理', 3000);
-    renderFbPanel();
+    var rec={t:Date.now(),_ts:Date.now(),dim:k,dimLabel:d.label,state:term.txt,desc:desc||'',status:'待补传',cloud:0,id:''};
+    saveFb(rec);
+    var after=function(ok,id){
+      var arr=[]; try{ arr=JSON.parse(localStorage.getItem('shenzhou_fb')||'[]'); }catch(e){ arr=[]; }
+      for(var i=0;i<arr.length;i++){ if(arr[i]._ts===rec._ts){ arr[i].cloud=ok?1:0; arr[i].status=ok?'已提交':'待补传'; if(ok&&id) arr[i].id=id; } }
+      try{ localStorage.setItem('shenzhou_fb', JSON.stringify(arr)); }catch(e){}
+      renderFbPanel();
+    };
+    fbPushToCloud(rec, function(ok,id){
+      if(ok){ showToast('反馈已提交云端（工单 '+id+'），次日 07:30 统一处理', 3000); }
+      else { showToast('云端暂不可用，反馈已存本机，联网后自动补传', 3000); }
+      after(ok,id);
+    });
   };
 
   window.renderFbPanel=function(){
     var box=document.getElementById('fbPanel'); if(!box) return;
     var arr=[]; try{ arr=JSON.parse(localStorage.getItem('shenzhou_fb')||'[]'); }catch(e){ arr=[]; }
     var logs=[]; try{ logs=JSON.parse(localStorage.getItem('shenzhou_oplog')||'[]'); }catch(e){ logs=[]; }
-    var h='<b style="color:#ffa726;font-size:12px">反馈中心（本机记录）</b><div style="font-size:10.5px;color:var(--dim);line-height:1.6">反馈随次日 07:30 定时任务统一处理并回执；已修复项会标注版本号。</div>';
-    if(!arr.length) h+='<div style="margin-top:6px;font-size:11px;color:var(--dim)">暂无反馈记录。对某个维度不满意时，点该行「不满意?」提交。</div>';
-    else{
-      h+='<table style="width:100%;margin-top:6px;border-collapse:collapse;font-size:10.5px"><tr style="color:var(--dim)"><th style="text-align:left;padding:2px 4px;border-bottom:1px solid rgba(255,255,255,0.1)">时间</th><th style="text-align:left;padding:2px 4px;border-bottom:1px solid rgba(255,255,255,0.1)">维度</th><th style="text-align:left;padding:2px 4px;border-bottom:1px solid rgba(255,255,255,0.1)">状态</th><th style="text-align:left;padding:2px 4px;border-bottom:1px solid rgba(255,255,255,0.1)">描述</th></tr>';
-      for(var i=arr.length-1;i>=0;i--){ var x=arr[i]; h+='<tr><td style="padding:2px 4px">'+new Date(x.t).toTimeString().slice(0,5)+'</td><td style="padding:2px 4px">'+x.dimLabel+'</td><td style="padding:2px 4px;color:#ffa726">'+x.status+'</td><td style="padding:2px 4px;color:var(--dim);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+((x.desc||'').slice(0,20)||'—')+'</td></tr>'; }
-      h+='</table>';
+    var pending=0; for(var i=0;i<arr.length;i++){ if(!arr[i].cloud) pending++; }
+    var h='<b style="color:#ffa726;font-size:12px">反馈中心（云端工单 · v13.1）</b><div style="font-size:10.5px;color:var(--dim);line-height:1.6">反馈提交后存入云端 COS，次日 07:30 统一处理回执；已修复项标注版本号。</div>';
+    h+='<div id="fbCloudList" style="margin-top:6px;font-size:10.5px;color:var(--dim)">云端工单加载中…</div>';
+    h+='<div style="margin-top:6px;font-size:10px;color:var(--dim)">本机缓冲：'+arr.length+' 条'+(pending>0?('（其中 '+pending+' 条待补传）'):'')+'</div>';
+    h+='<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">'+
+        '<button onclick="loadFbCloud()" style="padding:2px 8px;font-size:10px;cursor:pointer;border-radius:5px;color:#42a5f5;background:rgba(66,165,245,0.12);border:1px solid rgba(66,165,245,0.4)">刷新云端工单</button>'+
+        '<button onclick="loadHealthReport()" style="padding:2px 8px;font-size:10px;cursor:pointer;border-radius:5px;color:#26c6da;background:rgba(38,198,218,0.12);border:1px solid rgba(38,198,218,0.4)">健康日报</button>'+
+        '<button onclick="pushPendingFb()" style="padding:2px 8px;font-size:10px;cursor:pointer;border-radius:5px;color:#ffa726;background:rgba(255,167,38,0.12);border:1px solid rgba(255,167,38,0.4)">补传待发</button></div>';
+    if(arr.length){
+      var lt=''; var last=arr.slice(-3).reverse();
+      for(var j=0;j<last.length;j++){ var y=last[j]; lt+=('['+new Date(y.t).toTimeString().slice(0,5)+'] '+y.dimLabel+' '+(y.status)+(y.cloud&&y.id?(' #'+y.id):'')+(y.desc?('「'+String(y.desc).slice(0,10)+'」'):'')+'；'); }
+      h+='<div style="margin-top:6px;font-size:10px;color:var(--dim)">最近提交：'+lt+'</div>';
     }
     if(logs.length){
       var op=''; var last=logs.slice(-4).reverse();
@@ -8420,7 +8458,54 @@ document.addEventListener('DOMContentLoaded',()=>{
       h+='<div style="margin-top:6px;font-size:10px;color:var(--dim)">最近操作：'+op+'</div>';
     }
     box.innerHTML=h;
+    loadFbCloud();
+    pushPendingFb();
   };
+
+  window.loadFbCloud=function(){
+    var el=document.getElementById('fbCloudList'); if(!el) return;
+    el.innerHTML='云端工单加载中…';
+    try{
+      fetch(PROXY_URL+'?fb=list').then(function(r){return r.json();}).then(function(j){
+        if(!(j&&j.ok)){ el.innerHTML='<span style="color:#ef5350">云端暂不可用，稍后点「刷新云端工单」重试</span>'; return; }
+        var items=(j.items||[]).slice(-8).reverse();
+        if(!items.length){ el.innerHTML='<span style="color:var(--dim)">暂无云端工单</span>'; return; }
+        var stMap={submitted:['已提交','#ffa726'],accepted:['已接收','#42a5f5'],processing:['处理中','#42a5f5'],solved:['已解决 '+(items[0].solvedVer||''),'#4caf50']};
+        var rows='';
+        for(var i=0;i<items.length;i++){ var x=items[i]; var s=stMap[x.status]||[x.status||'已提交','#e2e8f0']; rows+='<tr><td style="padding:2px 4px;color:var(--dim);white-space:nowrap">'+new Date(x.ts*1000).toLocaleString('zh-CN')+'</td><td style="padding:2px 4px;color:#e2e8f0">'+x.dim+'</td><td style="padding:2px 4px;color:'+s[1]+'">'+s[0]+'</td><td style="padding:2px 4px;color:var(--dim);max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+((x.msg||'').slice(0,16)||'—')+'</td></tr>'; }
+        el.innerHTML='<table style="width:100%;border-collapse:collapse;font-size:10.5px"><tr style="color:var(--dim)"><th style="text-align:left;padding:2px 4px;border-bottom:1px solid rgba(255,255,255,0.12)">时间</th><th style="text-align:left;padding:2px 4px;border-bottom:1px solid rgba(255,255,255,0.12)">维度</th><th style="text-align:left;padding:2px 4px;border-bottom:1px solid rgba(255,255,255,0.12)">状态</th><th style="text-align:left;padding:2px 4px;border-bottom:1px solid rgba(255,255,255,0.12)">描述</th></tr>'+rows+'</table>';
+      }).catch(function(){ el.innerHTML='<span style="color:#ef5350">云端加载失败，点「刷新云端工单」重试</span>'; });
+    }catch(e){ el.innerHTML='<span style="color:#ef5350">云端加载失败</span>'; }
+  };
+
+  window.loadHealthReport=function(){
+    var d=new Date(Date.now()-86400000);
+    var day=d.getFullYear()+''+('0'+(d.getMonth()+1)).slice(-2)+''+('0'+d.getDate()).slice(-2);
+    try{
+      fetch(PROXY_URL+'?health=get&date='+day).then(function(r){return r.json();}).then(function(j){
+        if(!(j&&j.ok)){ showToast('健康日报读取失败',2500); return; }
+        var lines=['【神州时图健康日报 · '+day+'】'];
+        if(j.daily){
+          lines.push('— 官方巡检（07:30 定时任务）—');
+          var d2=j.daily; if(d2.dims){
+            for(var k in d2.dims){ var v=d2.dims[k]; lines.push('  '+k+'：'+(v.st||'?')+(v.src?(' @ '+v.src):'')+(v.ok?' 成功率'+v.ok+'%':'')+(v.note?(' '+v.note):'')); }
+          }
+        } else { lines.push('— 官方巡检：当日未生成（次日 07:30 生成）—'); }
+        if(j.user&&j.user.dims){
+          lines.push('— 用户侧快照 —');
+          for(var k2 in j.user.dims){ var v2=j.user.dims[k2]; lines.push('  '+k2+'：'+(v2.st||'?')+(v2.src?(' @ '+v2.src):'')); }
+        }
+        if(!j.daily&&!(j.user&&j.user.dims)) lines.push('当日暂无巡检与快照数据');
+        lines.push('若对某维度不满意，可在健康面板点「不满意?」提交反馈。');
+        var dp=document.getElementById('diagPanel'), dr=document.getElementById('diagReport');
+        if(dp) dp.style.display='block';
+        if(dr) dr.textContent=lines.join('\n');
+        window.lastDiag=lines.join('\n');
+        showToast('健康日报已生成（'+day+'）',2500);
+      }).catch(function(){ showToast('健康日报读取失败',2500); });
+    }catch(e){ showToast('健康日报读取失败',2500); }
+  };
+
   window.toggleFbPanel=function(){ var p=document.getElementById('fbPanel'); if(!p) return; p.style.display=(p.style.display==='none')?'block':'none'; if(p.style.display==='block') renderFbPanel(); };
 
   var dotHtml=function(st){ var t=window.termOf(st); return '<span style="color:'+t.dot+'">●</span> '+t.txt; };
@@ -8462,7 +8547,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   var lastReport='';
   window.runSelfCheck=function(){
     var lines=[], live=0,backup=0,cache=0,snap=0,down=0,na=0;
-    lines.push('【神州时图自检报告 · v13.0 · '+new Date().toLocaleString('zh-CN')+'】');
+    lines.push('【神州时图自检报告 · v13.1 · '+new Date().toLocaleString('zh-CN')+'】');
     for(var i=0;i<DS.length;i++){
       var st=window.dimState(DS[i].k); if(!st) continue;
       var t=window.termOf(st);
@@ -8482,8 +8567,8 @@ document.addEventListener('DOMContentLoaded',()=>{
     showToast('自检完成（'+live+' 实时 · '+down+' 失败）', 2500);
   };
   window.copyDiagReport=function(){
-    if(!lastReport) lastReport=document.getElementById('diagReport')?document.getElementById('diagReport').textContent:'';
-    if(!lastReport){ showToast('请先生成自检报告', 2000); return; }
+    if(!lastReport){ if(window.lastDiag){ lastReport=window.lastDiag; } else lastReport=document.getElementById('diagReport')?document.getElementById('diagReport').textContent:''; }
+    if(!lastReport){ showToast('请先生成自检报告或健康日报', 2000); return; }
     try{
       if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(lastReport).then(function(){ showToast('报告已复制，可粘贴到反馈中', 2500); }).catch(function(){ fallbackCopy(); }); }
       else fallbackCopy();
@@ -8491,9 +8576,21 @@ document.addEventListener('DOMContentLoaded',()=>{
     function fallbackCopy(){ try{ var ta=document.createElement('textarea'); ta.value=lastReport; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); showToast('报告已复制，可粘贴到反馈中', 2500); }catch(e2){ showToast('复制失败，请手动选择报告文本', 2000); } }
   };
 
-  var tick=function(){ try{ renderHealthBoard(); renderTopStatus(); }catch(e){} };
-  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(tick,1200); setInterval(tick,30000); });
-  else { setTimeout(tick,1200); setInterval(tick,30000); }
+  /* v13.1：30s 心跳期间上报健康快照（5 分钟节流），供次日 07:30 健康日报聚合 */
+  var __lastHealthPost=0;
+  function postHealthSnapshot(){
+    var now=Date.now(); if(now-__lastHealthPost<300000) return; __lastHealthPost=now;
+    var dims={};
+    try{
+      for(var i=0;i<DS.length;i++){ var st=window.dimState(DS[i].k); if(!st) continue; dims[DS[i].k]={st:st.level||'',src:st.src||'',ok:st.lastOkT?1:0,last:st.lastOkT||0}; }
+      fetch(PROXY_URL+'?health=post&data='+encodeURIComponent(JSON.stringify({dims:dims,_src:'front'}))).catch(function(){});
+    }catch(e){}
+  }
+  window.postHealthSnapshot=postHealthSnapshot;
+
+  var tick=function(){ try{ renderHealthBoard(); renderTopStatus(); postHealthSnapshot(); }catch(e){} };
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(tick,1200); setInterval(tick,30000); setTimeout(pushPendingFb,4000); });
+  else { setTimeout(tick,1200); setInterval(tick,30000); setTimeout(pushPendingFb,4000); }
   /* 页面加载/手动刷新完成后联动刷新徽章 */
   try{ var _or=window.renderSourceBoard; }catch(e){}
   window.addEventListener('load', function(){ setTimeout(tick, 2500); });
